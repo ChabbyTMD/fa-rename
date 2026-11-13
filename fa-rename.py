@@ -36,7 +36,7 @@ def check_fasta(f):
 			line = line.strip()
 			if not line or line[0] == '>':	
 				continue
-			if bool(re.search('[^ACTGactgNn?\-]', line)):	# Check if there are non-nucleotide characters in sequence
+			if bool(re.search(r'[^ACTGactgNn?\-]', line)):	# Check if there are non-nucleotide characters in sequence
 				return False
 	return True
 
@@ -44,7 +44,13 @@ def tab2dict(tab, sep):
 	dict = {}
 	with open(tab, mode='r') as file:
 		table = csv.reader(file, delimiter=sep)
-		for row in table:
+		for n, row in enumerate(table, 1):
+			if not row or not ''.join(row).strip():		# Skip blank lines
+				continue
+			if len(row) < 2:
+				err('ERROR: Line {} of "{}" has no "{}"-separated second column.\n'
+					'       Found: {!r}\n'
+					'       Expected: [oldname]{sep}[newname]'.format(n, tab, 'TAB', row[0], sep=sep))
 			dict[row[0]] = row[1]
 	return dict
 
@@ -72,13 +78,22 @@ if args.out:
 # Rename leaf nodes
 newseqs = []
 new_names = tab2dict(args.ids[0], '\t')
+unmapped = []
 for record in SeqIO.parse(args.fasta[0], 'fasta'):
-	newid = new_names[record.id]
+	newid = new_names.get(record.id)
+	if newid is None:
+		unmapped.append(record.id)
+		continue
 	newseqs.append(SeqRecord(record.seq, id=newid, description=''))
 
-# Write masked alignment to file or print to stdout
+if unmapped:
+	err('ERROR: No new name found in "{}" for {} sequence ID(s):\n  {}\n'
+		'       Check that column 1 contains the bare ID (no description text).'.format(
+			args.ids[0], len(unmapped), '\n  '.join(unmapped)))
+
+# Write renamed sequences to file or print to stdout
 if args.out:
-	msg('Masked sequences saved to "{}" ... '.format(args.out[0]))
+	msg('Renamed sequences saved to "{}" ... '.format(args.out[0]))
 	SeqIO.write(newseqs, args.out[0], 'fasta')
 else:
 	seqFILE = StringIO()
